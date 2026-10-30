@@ -47,7 +47,7 @@ jobs:
 
           patterns = {
               "Anthropic key": re.compile(r"sk-ant-[A-Za-z0-9_-]{40,}"),
-              "OpenAI key": re.compile(r"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}"),
+              "OpenAI key": re.compile(r"(?<![A-Za-z0-9_])sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])"),
               "AWS access key": re.compile(r"AKIA[0-9A-Z]{16}"),
               "GitHub token": re.compile(r"(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{50,})"),
               "Slack token": re.compile(r"xox[baprs]-[0-9A-Za-z-]{12,}"),
