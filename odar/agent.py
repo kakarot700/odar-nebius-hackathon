@@ -469,7 +469,9 @@ class NebiusNemotronAdapter:
         if not self.api_key:
             raise RuntimeError("NEBIUS_API_KEY is required for the Nebius Token Factory provider")
         self.model = model or os.environ.get("ODAR_NEBIUS_MODEL", self.DEFAULT_MODEL)
-        self.base_url = (base_url or os.environ.get("ODAR_NEBIUS_BASE_URL", self.DEFAULT_BASE_URL)).rstrip("/")
+        self.base_url = (base_url or os.environ.get("ODAR_NEBIUS_BASE_URL", self.DEFAULT_BASE_URL)).rstrip(
+            "/"
+        )
         self.max_tokens = int(max_tokens)
         self.system_prompt = system_prompt
         self.request_timeout = float(request_timeout)
@@ -487,19 +489,25 @@ class NebiusNemotronAdapter:
                 converted.append({"role": role, "content": str(content)})
                 continue
             if role == "assistant":
-                text_parts = [block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text"]
+                text_parts = [
+                    block.get("text", "")
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "text"
+                ]
                 calls = []
                 for block in content:
                     if not isinstance(block, dict) or block.get("type") != "tool_use":
                         continue
-                    calls.append({
-                        "id": str(block.get("id", "")),
-                        "type": "function",
-                        "function": {
-                            "name": str(block.get("name", "")),
-                            "arguments": json.dumps(block.get("input", {}), ensure_ascii=False),
-                        },
-                    })
+                    calls.append(
+                        {
+                            "id": str(block.get("id", "")),
+                            "type": "function",
+                            "function": {
+                                "name": str(block.get("name", "")),
+                                "arguments": json.dumps(block.get("input", {}), ensure_ascii=False),
+                            },
+                        }
+                    )
                 item: Dict[str, Any] = {"role": "assistant", "content": "\n".join(text_parts) or None}
                 if calls:
                     item["tool_calls"] = calls
@@ -507,11 +515,13 @@ class NebiusNemotronAdapter:
             else:
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "tool_result":
-                        converted.append({
-                            "role": "tool",
-                            "tool_call_id": str(block.get("tool_use_id", "")),
-                            "content": str(block.get("content", "")),
-                        })
+                        converted.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": str(block.get("tool_use_id", "")),
+                                "content": str(block.get("content", "")),
+                            }
+                        )
                     elif isinstance(block, dict) and block.get("type") == "text":
                         converted.append({"role": role, "content": str(block.get("text", ""))})
         return converted
@@ -533,14 +543,16 @@ class NebiusNemotronAdapter:
         result = []
         for spec in tools:
             item = dict(spec) if isinstance(spec, dict) else spec.to_dict()
-            result.append({
-                "type": "function",
-                "function": {
-                    "name": item["name"],
-                    "description": item.get("description", ""),
-                    "parameters": item.get("input_schema", {"type": "object", "properties": {}}),
-                },
-            })
+            result.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": item["name"],
+                        "description": item.get("description", ""),
+                        "parameters": item.get("input_schema", {"type": "object", "properties": {}}),
+                    },
+                }
+            )
         return result
 
     async def next_response(
@@ -557,6 +569,7 @@ class NebiusNemotronAdapter:
             payload["tools"] = definitions
             payload["tool_choice"] = "auto"
         import asyncio
+
         response = await asyncio.to_thread(self._post, payload)
         choices = response.get("choices") or []
         if not choices:
@@ -572,22 +585,31 @@ class NebiusNemotronAdapter:
                 arguments = json.loads(function.get("arguments") or "{}")
             except (json.JSONDecodeError, TypeError) as exc:
                 raise RuntimeError("Nebius model returned invalid JSON tool arguments") from exc
-            blocks.append({
-                "type": "tool_use",
-                "id": str(call.get("id", new_id("toolu"))),
-                "name": str(function.get("name", "")),
-                "input": arguments if isinstance(arguments, dict) else {},
-            })
+            blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": str(call.get("id", new_id("toolu"))),
+                    "name": str(function.get("name", "")),
+                    "input": arguments if isinstance(arguments, dict) else {},
+                }
+            )
         reason = "tool_use" if blocks and any(block["type"] == "tool_use" for block in blocks) else "end_turn"
         return ModelEvent(role="assistant", content=blocks, stop_reason=reason)
 
     async def complete_text(self, prompt: str, system_prompt: str, max_tokens: int = 1024) -> str:
         import asyncio
-        response = await asyncio.to_thread(self._post, {
-            "model": self.model,
-            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
-            "max_tokens": int(max_tokens),
-        })
+
+        response = await asyncio.to_thread(
+            self._post,
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": int(max_tokens),
+            },
+        )
         choices = response.get("choices") or []
         if not choices:
             raise RuntimeError("Nebius Token Factory returned no chat completion choices")

@@ -110,7 +110,9 @@ def build_deep_engine(
 ) -> ResearchEngine:
     """Multi-agent pipeline; LLM roles routed across free models with fallback."""
     if getattr(args, "model", "scripted") == "llm" and getattr(args, "provider", "anthropic") != "anthropic":
-        raise ValueError("Deep mode currently supports only the Anthropic provider; use --mode single with --provider nebius.")
+        raise ValueError(
+            "Deep mode currently supports only the Anthropic provider; use --mode single with --provider nebius."
+        )
     from odar.deep import DeepResearchEngine
     from odar.router import AnthropicMessagesClient, load_routes
 
@@ -366,9 +368,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--model",
         choices=("scripted", "llm"),
-        default="llm" if (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("NEBIUS_API_KEY")) else "scripted",
+        default="llm"
+        if (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("NEBIUS_API_KEY"))
+        else "scripted",
     )
-    p_run.add_argument("--provider", choices=("anthropic", "nebius"), default=os.environ.get("ODAR_PROVIDER", "nebius" if os.environ.get("NEBIUS_API_KEY") else "anthropic"))
+    p_run.add_argument(
+        "--provider",
+        choices=("anthropic", "nebius"),
+        default=os.environ.get(
+            "ODAR_PROVIDER", "nebius" if os.environ.get("NEBIUS_API_KEY") else "anthropic"
+        ),
+    )
     p_run.add_argument("--base-url", default=None, help="Optional provider-compatible API base URL")
     p_run.add_argument(
         "--llm-model",
@@ -429,9 +439,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_resume.add_argument(
         "--model",
         choices=("scripted", "llm"),
-        default="llm" if (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("NEBIUS_API_KEY")) else "scripted",
+        default="llm"
+        if (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("NEBIUS_API_KEY"))
+        else "scripted",
     )
-    p_resume.add_argument("--provider", choices=("anthropic", "nebius"), default=os.environ.get("ODAR_PROVIDER", "nebius" if os.environ.get("NEBIUS_API_KEY") else "anthropic"))
+    p_resume.add_argument(
+        "--provider",
+        choices=("anthropic", "nebius"),
+        default=os.environ.get(
+            "ODAR_PROVIDER", "nebius" if os.environ.get("NEBIUS_API_KEY") else "anthropic"
+        ),
+    )
     p_resume.add_argument("--base-url", default=None, help="Optional provider-compatible API base URL")
     p_resume.add_argument(
         "--llm-model",
