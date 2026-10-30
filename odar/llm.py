@@ -825,8 +825,56 @@ class ScriptedResearchController:
                 backend=self.backend,
             )
 
-        # 2. Search yielded hits -> fetch the highest-quality unfetched target.
-        if len(state.sources) < self.max_fetches and getattr(self, "_pending_hits", None):
+        # 2. Respect the real run budget and reserve enough iterations to turn
+        # fetched pages into evaluated, synthesized findings.  The controller
+        # can have more ranked hits than the executor is allowed to fetch;
+        # proposing an over-budget fetch wastes a loop iteration and can leave
+        # every fetched source unmined (the zero-claim failure seen in short
+        # local/demo runs).
+        budget = budget_report.get("budget", {}) if isinstance(budget_report, dict) else {}
+        counters = budget_report.get("counters", {}) if isinstance(budget_report, dict) else {}
+        configured_fetches = budget.get("max_fetches")
+        used_fetches = counters.get("fetches", 0)
+        fetch_limit = self.max_fetches
+        if isinstance(configured_fetches, (int, float)):
+            fetch_limit = min(fetch_limit, int(configured_fetches))
+        fetch_capacity = used_fetches < fetch_limit
+
+        configured_iterations = budget.get("max_iterations")
+        used_iterations = counters.get("iterations", state.iteration)
+        iteration_slots = None
+        if isinstance(configured_iterations, (int, float)):
+            # The current decision already occupies one iteration.
+            iteration_slots = max(0, int(configured_iterations) - int(used_iterations) + 1)
+
+        unmined_sources = [sid for sid in state.sources if sid not in state.mined_source_ids]
+        if unmined_sources and (not fetch_capacity or (iteration_slots is not None and iteration_slots <= 3)):
+            return ModelDecision(
+                action="extract_claims",
+                params={},
+                reasoning="mine retrieved evidence before the remaining budget is spent on more fetches",
+                backend=self.backend,
+            )
+
+        # The last loop slot must produce a usable, audited outcome rather than
+        # start another counter-search/evaluation that cannot be synthesized.
+        if iteration_slots is not None and iteration_slots <= 1:
+            if state.supporting_claims() or state.provisional_claims():
+                return ModelDecision(
+                    action="synthesize",
+                    params={},
+                    reasoning="reserve the final iteration to report the strongest verified findings and limitations",
+                    backend=self.backend,
+                )
+            return ModelDecision(
+                action="finish",
+                params={"uncertainty": "insufficient_evidence" if state.claims else "no_evidence_found"},
+                reasoning="final iteration reached without support; finish transparently instead of beginning more work",
+                backend=self.backend,
+            )
+
+        # Search yielded hits -> fetch the highest-quality unfetched target.
+        if len(state.sources) < self.max_fetches and fetch_capacity and getattr(self, "_pending_hits", None):
             best = self._next_fetch_target(state)
             if best is not None:
                 return ModelDecision(
@@ -881,12 +929,12 @@ class ScriptedResearchController:
                 backend=self.backend,
             )
 
-        # 6. Sources exist but claims not extracted yet.
-        if state.sources and not state.claims:
+        # 6. Sources exist but have not all been mined yet.
+        if unmined_sources:
             return ModelDecision(
                 action="extract_claims",
                 params={},
-                reasoning=f"{len(state.sources)} source(s) fetched; extract candidate claims",
+                reasoning=f"{len(unmined_sources)} fetched source(s) remain to be mined for candidate claims",
                 backend=self.backend,
             )
 

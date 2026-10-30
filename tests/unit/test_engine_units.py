@@ -77,6 +77,86 @@ class TestScriptedControllerAdaptivity:
         assert decision.action == "finish"
         assert decision.params["uncertainty"] == "no_evidence_found"
 
+    def test_extracts_existing_sources_instead_of_exceeding_fetch_budget(self):
+        from odar.schemas import SearchHit
+
+        controller = ScriptedResearchController()
+        state = ResearchState(objective="What Python versions are currently supported?")
+        state.attempted_queries.append("python versions supported")
+        state.iteration = 3
+        state.sources["source-1"] = object()
+        state.sources["source-2"] = object()
+        controller.offer_hits(
+            [SearchHit(url="https://example.org/third", title="Third", snippet="Python versions", engine="test")]
+        )
+
+        decision = controller.decide(
+            state,
+            {
+                "budget": {"max_fetches": 2, "max_iterations": 4},
+                "counters": {"fetches": 2, "iterations": 3},
+            },
+        )
+
+        assert decision.action == "extract_claims"
+
+    def test_reserves_last_iterations_for_claim_extraction_and_finish(self):
+        from odar.schemas import SearchHit
+
+        controller = ScriptedResearchController()
+        state = ResearchState(objective="What Python versions are currently supported?")
+        state.attempted_queries.append("python versions supported")
+        state.iteration = 2
+        state.sources["source-1"] = object()
+        controller.offer_hits(
+            [SearchHit(url="https://example.org/second", title="Second", snippet="Python versions", engine="test")]
+        )
+
+        decision = controller.decide(
+            state,
+            {
+                "budget": {"max_fetches": 2, "max_iterations": 4},
+                "counters": {"fetches": 1, "iterations": 2},
+            },
+        )
+
+        assert decision.action == "extract_claims"
+
+    def test_synthesizes_supported_findings_instead_of_spending_last_iteration_on_conflict(self):
+        from odar.evidence import Claim
+
+        controller = ScriptedResearchController()
+        state = ResearchState(objective="Q")
+        state.attempted_queries.append("initial query")
+        state.iteration = 4
+        state.add_claim(Claim(claim_id="clm_1", text="supported claim", status="CERTIFIED", needs_evaluation=False))
+        state.contradictions.append({"claim_id": "clm_1", "examined": False})
+
+        decision = controller.decide(
+            state,
+            {"budget": {"max_iterations": 5}, "counters": {"iterations": 5}},
+        )
+
+        assert decision.action == "synthesize"
+
+    def test_finishes_transparently_when_last_iteration_has_no_supported_claims(self):
+        from odar.evidence import Claim
+
+        controller = ScriptedResearchController()
+        state = ResearchState(objective="Q")
+        state.attempted_queries.append("initial query")
+        state.iteration = 4
+        state.add_claim(Claim(claim_id="clm_1", text="uncertain claim", status="CONFLICTING"))
+        state.contradictions.append({"claim_id": "clm_1", "examined": False})
+
+        decision = controller.decide(
+            state,
+            {"budget": {"max_iterations": 5}, "counters": {"iterations": 5}},
+        )
+
+        assert decision.action == "finish"
+        assert decision.params["uncertainty"] == "insufficient_evidence"
+
     def test_reacts_to_open_contradiction(self):
         controller = ScriptedResearchController()
         state = ResearchState(objective="Q")
