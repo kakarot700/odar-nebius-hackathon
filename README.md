@@ -4,6 +4,8 @@ ODAR is a Python research engine that turns a question into a traceable research
 
 ODAR can use a native Anthropic Messages tool-use controller or a Nebius Token Factory OpenAI-compatible controller for NVIDIA Nemotron. Without a provider key it uses a deterministic scripted controller. Hosted-model use may incur provider charges; the no-key controller avoids model API use, but web retrieval can still use the network.
 
+For a concise reviewer path, see the [Nebius x NVIDIA judge walkthrough](docs/HACKATHON_DEMO.md): architecture, reproducible checks, the real-provider run command, demo narrative, and the evidence required before calling a submission complete. It explicitly separates mocked adapter coverage from a verified live run.
+
 > The implementation and its verification boundaries are documented in [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), [Operations](docs/OPERATIONS.md), and the [Production Readiness audit](docs/PRODUCTION_READINESS.md). That audit distinguishes verified, partially verified, implemented, and out-of-scope items; it is not a blanket production certification.
 
 ## Screenshots
