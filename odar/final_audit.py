@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 
 from odar.evidence import Relation, Uncertainty
 from odar.research_state import ResearchState
+from odar.loop_breaker import STOPWORDS, tokenize
 from odar.stats_extraction import extract_statistical_facts
 
 _CAUSAL_RE = re.compile(
@@ -22,6 +23,72 @@ _CAUSAL_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
+_QUESTION_CUES = frozenset(
+    {
+        "currently",
+        "evidence",
+        "explain",
+        "explains",
+        "explained",
+        "explaining",
+        "their",
+        "describe",
+        "describes",
+        "described",
+        "show",
+        "shows",
+        "shown",
+    }
+)
+
+
+def _focus_stem(token: str) -> str:
+    """Small dependency-free normalizer for question-focus coverage warnings."""
+    if len(token) > 5 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 6 and token.endswith("ing"):
+        stem = token[:-3]
+        return stem[:-1] if len(stem) > 2 and stem[-1] == stem[-2] else stem
+    if len(token) > 5 and token.endswith("ed"):
+        stem = token[:-2]
+        return stem[:-1] if len(stem) > 2 and stem[-1] == stem[-2] else stem
+    if len(token) > 5 and token.endswith(("ches", "shes", "xes", "zes", "sses")):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _focus_terms(text: str) -> set[str]:
+    return {
+        stem
+        for raw in tokenize(text)
+        if raw not in STOPWORDS and raw not in _QUESTION_CUES
+        if len(stem := _focus_stem(raw)) >= 3
+    }
+
+
+def _question_focus_gaps(objective: str, claims: List[str]) -> List[str]:
+    """Flag obvious missing lexical focus in multi-part questions, never certify relevance.
+
+    This intentionally stays a warning heuristic: semantic coverage cannot be
+    established by token overlap, and synonyms may produce false positives.
+    """
+    clauses = [part.strip(" ,.;:") for part in re.split(r"\band\b|;", objective, flags=re.IGNORECASE)]
+    clauses = [part for part in clauses if part]
+    if len(clauses) < 2:
+        return []
+    answer_terms = _focus_terms(" ".join(claims))
+    gaps: List[str] = []
+    for index, clause in enumerate(clauses, start=1):
+        terms = _focus_terms(clause)
+        # Short clauses rarely expose enough lexical signal for a useful warning.
+        if len(terms) < 2:
+            continue
+        missing = sorted(terms - answer_terms)
+        if missing:
+            gaps.append(f"clause {index}: {', '.join(missing)}")
+    return gaps
 
 
 @dataclass
@@ -33,6 +100,7 @@ class AuditReport:
     hallucinated_citations: List[str] = field(default_factory=list)
     circular_citations: List[str] = field(default_factory=list)
     provisional_certifications: List[str] = field(default_factory=list)
+    question_focus_gaps: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -43,6 +111,7 @@ class AuditReport:
             "hallucinated_citations": self.hallucinated_citations,
             "circular_citations": self.circular_citations,
             "provisional_certifications": self.provisional_certifications,
+            "question_focus_gaps": self.question_focus_gaps,
         }
 
 
@@ -99,6 +168,20 @@ class FinalAuditor:
                 if not disclosed:
                     report.unsupported_claims.append(claim.claim_id)
         report.checks["no_unsupported_critical_claims"] = not report.unsupported_claims
+
+        # A source can entail a true fact that still misses one part of the
+        # user's question. Surface obvious gaps separately from citation
+        # correctness; lexical coverage is only a warning, never a semantic
+        # certification or a reason to demote an otherwise supported claim.
+        report.question_focus_gaps = _question_focus_gaps(
+            state.objective, [claim.text for claim in certified]
+        )
+        report.checks["question_focus_covered"] = not report.question_focus_gaps
+        if report.question_focus_gaps:
+            report.findings.append(
+                "heuristic question-focus coverage gaps (check synonyms/context): "
+                + "; ".join(report.question_focus_gaps)
+            )
 
         # 2. Hallucinated citations: every marker must resolve against the
         #    recorded research state (sources for src_*, claims for clm_*,

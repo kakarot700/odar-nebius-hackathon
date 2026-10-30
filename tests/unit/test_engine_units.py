@@ -87,7 +87,11 @@ class TestScriptedControllerAdaptivity:
         state.sources["source-1"] = object()
         state.sources["source-2"] = object()
         controller.offer_hits(
-            [SearchHit(url="https://example.org/third", title="Third", snippet="Python versions", engine="test")]
+            [
+                SearchHit(
+                    url="https://example.org/third", title="Third", snippet="Python versions", engine="test"
+                )
+            ]
         )
 
         decision = controller.decide(
@@ -109,7 +113,11 @@ class TestScriptedControllerAdaptivity:
         state.iteration = 2
         state.sources["source-1"] = object()
         controller.offer_hits(
-            [SearchHit(url="https://example.org/second", title="Second", snippet="Python versions", engine="test")]
+            [
+                SearchHit(
+                    url="https://example.org/second", title="Second", snippet="Python versions", engine="test"
+                )
+            ]
         )
 
         decision = controller.decide(
@@ -129,7 +137,9 @@ class TestScriptedControllerAdaptivity:
         state = ResearchState(objective="Q")
         state.attempted_queries.append("initial query")
         state.iteration = 4
-        state.add_claim(Claim(claim_id="clm_1", text="supported claim", status="CERTIFIED", needs_evaluation=False))
+        state.add_claim(
+            Claim(claim_id="clm_1", text="supported claim", status="CERTIFIED", needs_evaluation=False)
+        )
         state.contradictions.append({"claim_id": "clm_1", "examined": False})
 
         decision = controller.decide(
@@ -372,6 +382,62 @@ class TestFinalAuditorFlags:
         report = FinalAuditor().audit(state, synthesis)
         assert report.checks["citations_resolve"] is False
         assert report.status == "FAIL"
+
+    def test_multi_part_question_with_an_uncovered_focus_is_flagged(self):
+        from odar.evidence import Claim, EvidenceItem, Relation, SourceRecord, Uncertainty
+        from odar.schemas import new_id
+
+        state = ResearchState(
+            objective="What Python versions are supported, and what explains their support timelines?"
+        )
+        source = SourceRecord(
+            source_id=new_id("src"),
+            url="https://example.com/python",
+            http_status=200,
+            retrieved_at=time.time(),
+            title="Python versions",
+            content_hash="focus-check",
+            extracted_text="Python versions are supported across several releases.",
+        )
+        state.add_source(source)
+        claim = Claim(
+            claim_id=new_id("clm"),
+            text="Python versions are supported across several releases.",
+            status="CERTIFIED",
+            uncertainty=Uncertainty.EVIDENCE_FOR,
+        )
+        state.add_claim(claim)
+        state.add_evidence(
+            EvidenceItem(
+                evidence_id=new_id("ev"),
+                claim_id=claim.claim_id,
+                source_id=source.source_id,
+                span=claim.text,
+                relation=Relation.SUPPORTS,
+                entailment_probability=0.97,
+                contradiction_probability=0.01,
+                relevance_score=1.0,
+                evaluated_by="test",
+            )
+        )
+
+        report = FinalAuditor().audit(
+            state,
+            f"{claim.text} [{source.source_id}]\n\nLimitations: no dates are established.",
+        )
+
+        assert report.checks["no_circular_citations"] is True
+        assert report.checks["question_focus_covered"] is False
+        assert report.question_focus_gaps == ["clause 2: timeline"]
+        assert report.status == "PASS_WITH_FLAGS"
+
+    def test_single_part_question_skips_lexical_coverage_warning(self):
+        from odar.final_audit import _question_focus_gaps
+
+        assert (
+            _question_focus_gaps("What Python versions are supported?", ["Python releases are supported."])
+            == []
+        )
 
     def test_clean_report_passes(self):
         from odar.evidence import Claim, EvidenceItem, Relation, SourceRecord, Uncertainty
